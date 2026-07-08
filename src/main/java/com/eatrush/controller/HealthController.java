@@ -21,3 +21,5 @@ public class HealthController {
 		return Map.of("status","Good");
 	}
 }
+
+// 這邊不用做判斷 回傳隨便的東西其實就代表有成功 沒特別設定 前端判斷200
