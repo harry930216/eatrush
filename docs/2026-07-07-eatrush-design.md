@@ -83,6 +83,8 @@ flowchart LR
 
 ## 4. 資料模型(V1 七張表)— 每表為何存在、每欄的價值
 
+> **DDL 風格決策(2026-07-08,Step 2 施工中定)**:①全案 VARCHAR **不給長度**(PG 合法且慣用,= 不限長;MySQL 不可 — 方言差異);長度驗證交應用層 `@Size`(Step 3)。有規格上限的欄(BCrypt hash=60、UUID=36、email RFC=254)的長度知識留在 dev-log,V1 不鎖 DB 層。②order_item 加**表級複合 UNIQUE**(見 §4.7)。③建表三層思考順序:身分(一列是什麼→PK)→ 事實(每欄型別+能不能空+DEFAULT)→ 防線(UK/FK);可空是例外不是預設,每個 nullable 要講得出「空的語意」。
+
 ```mermaid
 erDiagram
     PLAN ||--o{ MEMBER : "客人屬於方案"
@@ -146,7 +148,7 @@ erDiagram
 |---|---|
 | id | 主鍵。BIGINT 自增(全系統統一,UcMarket 的 UUID 型別地雷教訓) |
 | name | 給人看的(「399 基本」);顯示用,不參與邏輯 |
-| level | **給機器比的**。權益檢查 = `member.plan.level >= menu_item.required_level` 一行。為何不用 id 當等級:id 是身分不是順序 — 將來插入 499 方案,level 給 1.5 的位置(改成 15/20 這種留空隙的數列),id 不用動 |
+| level | **給機器比的**。權益檢查 = `member.plan.level >= menu_item.required_level` 一行。為何不用 id 當等級:id 是身分不是順序 — 將來插入 499 方案,level 給 1.5 的位置(改成 15/20 這種留空隙的數列),id 不用動。**level 成立的前提**(2026-07-08 補):方案權益是商業承諾的鏈(chain,全序)— 貴方案永遠吃到所有便宜方案的菜,永不破,鏈才能壓成一個數字比大小;後台職能是偏序(互不包含),塞不進數線,所以那邊用矩陣(§4.5 Q1 對照)— 同一系統兩種授權形狀兩種解法 |
 
 ### 4.2 member(會員)— 為何存在:認證與授權的主體。每張訂單要能回答「誰點的」,每個後台操作要能回答「誰有權」
 
@@ -185,6 +187,22 @@ erDiagram
 |---|---|
 | role + permission_id(複合 PK) | 一列 = 「這個角色有這個權限」。複合主鍵天然防重複授權。seed:OWNER 三權全有;STAFF 只有 ORDER_STATUS_MANAGE |
 
+本表藏著**兩個獨立決策**(2026-07-08 吵透,分層記錄 — 混在一起講必卡):
+
+**Q1 能力題 — 為何用矩陣,不用 level 比大小**:看權限關係的形狀。「越往上越開放」=鏈(chain,全序 total order)才能壓成一個數字 — §4.1 方案權益是商業承諾的鏈(貴方案吃到所有便宜的,永不破),故用 level。後台職能天生是**偏序(partial order)**:V1 的 STAFF⊂OWNER 恰好成鏈(當下 level 確實解得了,矩陣是預付),但已知變化點「會計/REPORT_VIEW」(§15-13 儀表板圈,§4.4 亦以此為例)一來就破 — 會計不能管訂單(level 須 <1)又要看報表(門檻須 ≤會計 level)→ 店員全看得到財務;一維數線裝不下互不包含的職能。遷移代價不對稱:level→矩陣=所有 @PreAuthorize 從比大小重寫成查權限;矩陣預付=一張表+seed 四列+登入一句 JOIN → 現在就建。
+
+**Q2 形式題 — 為何 2 表不 3 表(無 role 表)**:與 Q1 完全獨立 — 3 表(role/permission/role_permission 雙 FK)同樣是矩陣、能力等價,差別只是 role 這個鍵用**代理鍵(surrogate key,id 數字)還是自然鍵(natural key,'OWNER' 字串)**。代理鍵三個存在理由逐條不中:①自然鍵會變?role 是 Java enum 常數,改名=全 code 重構級事件,DB 防不了 ②太笨重?五個字元 ③有屬性要掛?零屬性(對照 permission 有 name 要掛才配表)→ 自然鍵直接躺進複合 PK(role, permission_id)。「'OWNER' 重複三列該抽表」是正規化錯覺 — 正規化消除的是**屬性值**重複(防 update anomaly),**鍵值**重複不歸它管(member_id 重複萬次無人消除);對照:'STOCK_MANAGE' 同樣以字串進 @PreAuthorize/JWT,無人不安。真相源(single source of truth)視角:role 集合封閉 → 真相源在 code(enum),DB 字串是引用;permission 開放 → 真相源在 DB(表)。
+
+**升級觸發與業界對照**:判準一句話 = **角色由誰定義** — 工程師定義(行為在 code)→ enum+字串;營運者定義(角色是可配置資料)→ role 實體。三表殺手場景=多租戶 SaaS(每家店自訂「跑菜員/會計」,不可能改 enum 重部署)與通用 IAM(Keycloak 的 role 全表化,因平台不知業務);成立前提=代碼零 hasRole 寫死、授權全走 permission、角色退化為權限包(permission bundle)的名字。另一常見升級=一人多角(老闆兼會計)→ 加 user_role 中間表(業界完整 RBAC 五表:user/role/permission+兩張中間表);V1 member.role 單值=一人一角的刻意簡化。Spring Security 本身只認 GrantedAuthority 字串集合=2 表世界觀,框架從不要求 role 是實體。
+
+**終局戰(2026-07-08 同日二階段,Step 2 施工中 Harry 提議改 3 表,六輪後定案)— 純 2 表,連 CHECK 都不加**:
+
+- **型別安全的位置**:「判斷角色」的 Java 句子任何方案都躲不掉,差別只在 typo 何時被抓 — 2 表版 `@Enumerated(EnumType.STRING)`+enum,`==` 比對**編譯期就死**;3 表版 member 存 role_id → Java 淪為數字比對(`roleId==1`,1 是誰?)或字串比對(runtime 才錯)或雙軌 enum(兩份清單人肉同步)。想把驗證搬進 DB(FK),實得是把型別安全踢出 Java — 淨損
+- **FK 的真實能力**:只擋「不存在的 id」,不擋「填錯的 id」(role_id 2↔3 都合法且靜默;字串 'ONWER' 至少一眼假)— 3 表買不到「防打錯」
+- **CHECK 不加**(曾提案後收回):`CHECK (role IN (...))` = 集合定義在 DB 的第二份複本,加角色的 migration 從 INSERT 變 ALTER、同步點+1;typo 真實暴露面=seed 四行、一次性,防線=enum 寫入路徑+Step 2 JOIN 驗證即抓 — 不值得第二份清單
+- **擴充性總帳**(加一個角色):全程=①行為進 Java ②進清單 ③配權限 seed ④重部署;**瓶頸=①④,任何方案逃不掉**(V1 角色有寫死行為),3 表只把②的 ALTER 換成 INSERT=優化非瓶頸段。同步點數:純 2 表=2(enum+seed)< CHECK 版=3 = 3 表=3(enum+role 表+seed)。真擴充性=「不改 code 不部署調權限」— **矩陣本身已給**(改 role_permission 列+重登生效,§7),2 表就有;3 表獨賣的「不改 code 加角色」被 V1 架構(角色行為在 code)封印,付錢提不走貨
+- **實戰 trace(加會計)**:enum 加一字+一支 INSERT-only migration(permission/role_permission/member 各一句)+部署 — role 欄是 varchar,**新字串直接進,它從來就沒關上**。角色新增成本由「矩陣裝不下的專屬行為量」決定(會計=純矩陣角色 0 專屬行為≈配置級;CUSTOMER 有 plan/點餐行為=貴),**與表數無關**。一人多角逼出的是 user_role 而非 role 表 — 且 user_role 的 role 欄照樣可存字串,連五表模型都不需要 role 實體
+
 ### 4.6 meal_order(訂單)— 為何存在:交易的聚合根(aggregate root),狀態機的載體,冪等的錨點
 
 | 欄位 | 存在的價值 |
@@ -199,8 +217,9 @@ erDiagram
 
 | 欄位 | 存在的價值 |
 |---|---|
-| order_id / menu_item_id | 兩端外鍵,取消加回沿它找到要加回的菜 |
+| order_id / menu_item_id | 兩端外鍵,取消加回沿它找到要加回的菜;**兩欄皆 NOT NULL**(明細必屬於某張單、必對應某道菜 — REFERENCES 只管「指了要存在」,不管「必須指」,必填要自己宣告) |
 | quantity | 份數;加回量 = 這欄,不靠猜 |
+| UNIQUE(order_id, menu_item_id)(表級) | **同一張單裡同道菜只一列**,份數走 quantity — 防下單邏輯 bug 產生重複列(2026-07-08 Step 2 定,Harry 以 DDL 作答 D1 思考題)。教訓:單欄 UNIQUE(menu_item_id)=「全表唯一」= 每道菜全店史上只能被點一次 — UNIQUE 的作用域由「登記簿條目」決定:欄級約束視野=本欄,表級約束才寫得出組合唯一(詳 dev-log step2) |
 
 **為何不能壓平成一張表(每道菜一列、訂單欄位跟著複製)**:訂單級事實(status / idempotency_key / member_id)會被複製 N 份 — ①idempotency_key 的唯一索引建不起來(同單 N 列同 key),佔位式冪等地基塌;②狀態門票裂成 N 張:取消與備餐各搶到不同列 → 同一張單一半 CANCELLED 一半 PREPARING,「只加回一次」的保證前提是**一張訂單的狀態恰好存在一列**;③改單級事實要改 N 列(update anomaly)。分表準則一句話:**一列=一個事實** — 「這次交易」一份事實住 meal_order,「單內含這道菜」N 份事實住 order_item(與 UcMarket wallet 餘額一列 / 流水表 N 列同款)。
 
