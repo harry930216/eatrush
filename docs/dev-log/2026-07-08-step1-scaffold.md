@@ -52,6 +52,8 @@
 - Eclipse 匯入(踩兩坑:要用 **Maven** 匯入不是 General;workspace 不能等於專案資料夾 → 另開 `eclipse-workspace`)。
 - 跑 `EatrushApplication` → **Swagger UI 開得出來**(`/swagger-ui.html`,顯示 No operations = 還沒寫 controller,正常)。
 - `git init` → 首個 commit →(CRLF 警告無害)→ 建 GitHub repo → `git push -u origin main` 推上雲端。
+- 二次 `git push`(推日誌更新):輸出多行但實際只 5.41 KiB——git 只送 delta,正常。
+- 上 GitHub 檢查 repo:抓到 `.metadata`(Eclipse workspace 殘留)誤入 repo + `AGENTS.md.md` 檔名錯 → 給修正(`git rm -r --cached .metadata` + `.gitignore` 加 `.metadata/` + `git mv AGENTS.md.md AGENTS.md`)。
 
 ---
 
@@ -103,6 +105,25 @@ workspace 是書櫃、project 是書;書不能當書櫃。workspace 要指一個
 
 ### 13. CRLF vs LF(Windows 換行警告)
 `LF will be replaced by CRLF` 是無害警告——Windows Git `core.autocrlf=true` 在做轉換,commit 存進 repo 的仍是 LF。想根治且跨機一致,用 repo-level `.gitattributes`(`* text=auto eol=lf`),不是靠每台各自的 `core.autocrlf`(那會漂移)。
+
+### 14. health check 端點是什麼
+`GET /api/health` → 200,回答「服務還活著嗎」。真實用途:負載平衡器 / K8s probe / 監控系統定期打它,判斷 app 死活、決定導不導流或重啟。Step 1 拿它當第一支端點,因為它**不依賴任何業務**(不碰 DB / 登入 / entity),是驗證「骨架 + web 層」最乾淨的探針;playbook「不引 actuator」是要你**手寫**、學會最小的「Controller → 方法 → 回應」閉環。
+
+---
+
+## 踩過的坑(troubleshooting — README 素材 / 面試證據)
+
+> 格式:現象 → 原因 → 解法 → 學到。前六條是骨架/匯入期,後三條是版控期。
+
+1. **Initializr groupId 漏改** — pom `groupId` 還是 `com.example`,但 Java 套件已是 `com.eatrush`。原因:只改了 Package name 欄,Group 欄沒動。解法:pom `<groupId>` 改 `com.eatrush`。學到:Group(Maven 座標)與 Package name(程式碼套件)是兩個獨立欄位。
+2. **springdoc 版本填成佔位符 `2.8.x`** — `...:jar:2.8.x was not found`。原因:把「某個小版」的佔位符 `x` 照字面打成版本。解法:查 Maven Central `maven-metadata.xml` → 填確切 `2.8.17`。學到:版本要填實際數字,查權威清單不猜。
+3. **差點選 springdoc 3.0.3** — 清單最新是 3.0.3。原因:springdoc 大版號追 Boot 大版號(3.x=Boot4)。解法:Boot 3.5 → 選 2.x 最新的 2.8.17。學到:最新 ≠ 你該用的。
+4. **Eclipse 匯入用錯類型** — 匯入後專案不出現。原因:用了 General「Existing Projects」(找 `.project`),但 start.spring.io 專案沒那檔。解法:改用 Maven「Existing Maven Projects」(讀 pom)。學到:Maven 專案用 Maven 匯入。
+5. **workspace = 專案資料夾** — 匯入時警告「Can't import project from an existing workspace folder」。原因:開 Eclipse 時 workspace 選到專案資料夾本身。解法:切 workspace 到別處(`eclipse-workspace`),專案留原地再匯入。學到:workspace ≠ project(觀念 9)。
+6. **application.yaml 註解用 Tab** — 註解行用了 Tab 縮排。原因:貼上帶入 Tab。解法:註解移到最左或刪掉;YAML 結構縮排一律空格。學到:YAML 不吃 Tab。
+7. **`.metadata` 被 commit 進 repo** — GitHub 上冒出 `.metadata` 資料夾。原因:第 5 條那次 workspace=專案,Eclipse 在專案內建了 `.metadata`,`git add .` 掃進去;`.gitignore` 沒涵蓋。解法:`git rm -r --cached .metadata` + `.gitignore` 加 `.metadata/`。學到:早期的錯會留後遺症;`git add .` 前先 `git status` 看清掃了什麼。
+8. **AGENTS.md.md 雙副檔名** — 根目錄檔名多一截 `.md`。原因:打了 `.md` 又被自動加 `.md`。解法:`git mv AGENTS.md.md AGENTS.md`。學到:重複副檔名會讓「AI 找 AGENTS.md」慣例失效。
+9. **CRLF/LF 推送警告** — `LF will be replaced by CRLF` 一整片。原因:Windows Git `core.autocrlf=true` 轉換換行。解法(可選):`.gitattributes` 加 `* text=auto eol=lf`。學到:無害;repo-level 設定才可攜,per-machine 會漂移。
 
 ---
 
