@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:eatrush}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:post}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+
+# ${DB_PASSWORD} — 沒設環境變數 → 啟動直接炸(佔位符解不出來)。
+# ${DB_PASSWORD:post} — 沒設 → 用 post 保底。← 通用版要的
+# ${DB_PASSWORD:} — 沒設 → 用空字串(冒號後留空 = 預設空)。
+# 縮排要注意 用tab會炸 跟properties不一樣
