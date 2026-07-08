@@ -11,13 +11,14 @@
 - [x] pom.xml groupId `com.example` → `com.eatrush`
 - [x] GitHub repo `eatrush` 建好 + 本機首個 commit 推上(`git remote add origin` + `git push -u origin main`)
 - [x] 三份 spec md 複製進 `docs/`
-- [~] `eatrush-agents.md` → `AGENTS.md` 放根目錄(**已放,但檔名誤成 `AGENTS.md.md`,待改回**)
+- [x] `eatrush-agents.md` → `AGENTS.md` 放根目錄(檔名 `AGENTS.md.md` 已改回 `AGENTS.md`,commit b9844c3 / 8c04893)
 - [x] 本機 PostgreSQL 活著 + 建空庫 `eatrush`(app 起得來、Swagger 開得出 = 確認連上)
 - [x] 加 `springdoc-openapi-starter-webmvc-ui`(**2.8.17**,手動加進 pom)
 - [x] `application.yaml`:資料源指向 `eatrush`、`ddl-auto=validate`(升級成**通用版**:`${VAR:預設}` 外部化,見觀念 7)
-- [ ] 手寫 `GET /api/health` 回 200(一個 Controller 一個方法)← **Step 1 唯一剩下的**
+- [x] 手寫 `GET /api/health` 回 200(一個 Controller 一個方法)— **code 完成 + reviewed**,回 `{"status":"UP"}`
+- [ ] 跑正向 + 反向驗證 → 答出口思考題 → commit `step1:` ← **Step 1 真正的出口(待做)**
 
-> 骨架 / 環境 / 版控全通了,只剩 health API(你的產品碼,自己寫)+ 驗證。
+> 骨架 / 環境 / 版控全通;health API 已手寫完成並 reviewed。**剩下:正向+反向驗證 → 出口思考題 → commit。**(驗證還沒跑,故本檔尚未記「驗證通過」)
 
 ---
 
@@ -54,6 +55,12 @@
 - `git init` → 首個 commit →(CRLF 警告無害)→ 建 GitHub repo → `git push -u origin main` 推上雲端。
 - 二次 `git push`(推日誌更新):輸出多行但實際只 5.41 KiB——git 只送 delta,正常。
 - 上 GitHub 檢查 repo:抓到 `.metadata`(Eclipse workspace 殘留)誤入 repo + `AGENTS.md.md` 檔名錯 → 給修正(`git rm -r --cached .metadata` + `.gitignore` 加 `.metadata/` + `git mv AGENTS.md.md AGENTS.md`)。
+
+**Health 端點(自己手寫的第一支產品碼)**
+- 用 comment-driven 起手:先在檔頂寫中文步驟(請求進 DispatcherServlet → component scan → 查 handler mapping → 呼叫方法 → message converter 寫 body,狀態碼預設 200),再一格格填。
+- 設計決定(回傳型別):在 `String "OK"` 與結構化 JSON 之間,選了 `Map<String,String>` 回 `{"status":"UP"}` — 理由:一次拿到「正規形狀(JSON + status 欄位)」又不必另外定義型別;actuator 那套刻意不引(playbook 契約),留當面試彈藥。
+- 方法名 `isMainAlive` → `checkHealth`(`is` 前綴慣例是給回傳 boolean 用;這支回 Map,改名才名實相符)。
+- 成品:`@RestController` + `@GetMapping("/api/health")` + `public Map<String,String> checkHealth()` → `return Map.of("status","UP");`。
 
 ---
 
@@ -109,6 +116,20 @@ workspace 是書櫃、project 是書;書不能當書櫃。workspace 要指一個
 ### 14. health check 端點是什麼
 `GET /api/health` → 200,回答「服務還活著嗎」。真實用途:負載平衡器 / K8s probe / 監控系統定期打它,判斷 app 死活、決定導不導流或重啟。Step 1 拿它當第一支端點,因為它**不依賴任何業務**(不碰 DB / 登入 / entity),是驗證「骨架 + web 層」最乾淨的探針;playbook「不引 actuator」是要你**手寫**、學會最小的「Controller → 方法 → 回應」閉環。
 
+### 15. @Controller vs @RestController
+`@RestController` = `@Controller` + `@ResponseBody`。差別在**回傳值的身分**:`@Controller` 回的 String 被當「view 名稱」(交模板引擎找 HTML);`@RestController` 回的東西**直接寫進 response body**(String→text、物件→Jackson 轉 JSON)。REST API 全用後者。`@ResponseBody` 也可單掛在方法上;`@RestController` 只是把它一次套到整個 class。
+
+### 16. 路由 = 「路徑 + 動詞」兩維
+啟動時 `RequestMappingHandlerMapping` 掃 controller,把每支方法登記成「RequestMappingInfo(路徑 + 動詞…)→ 方法」。請求進 `DispatcherServlet`(總機)拿「路徑 + 動詞」查表命中。**只用路徑不夠**——同一條 `/api/menu/5`,GET(看)與 DELETE(刪)意圖不同,得靠動詞分。分流:路徑不存在→404、路徑在但動詞不對→405。`@GetMapping` = `@RequestMapping(method=GET)` 的縮寫(composed annotation);class 級 `@RequestMapping("/api")` 會與方法級路徑**相加**。動詞語意:GET = 安全(safe)+ 冪等(idempotent),探針天生該用 GET。
+
+### 17. 誰設 200 + 兩個「status」別混
+HTTP 200 **不是被判斷出來的**,是 `HttpServletResponse` 的**出廠預設**;方法正常回傳、沒人改狀態碼 → 維持 200。要變才需主動出手(丟例外→exception resolver 給 4xx/5xx;`@ResponseStatus` / `ResponseEntity` 自訂)。**關鍵區分**:HTTP 狀態碼 `200`(傳輸層,在狀態行)≠ body 裡的 `"status":"UP"`(應用層,你自取的欄位名),兩者無關——回 `"UP"` 不會「造成」200。(Step 3 起會親手玩狀態碼:建菜 201、庫存不足 409、找不到 404、`@Valid` 擋下 422。)
+
+### 18. 泛型(generics)為何存在 + Map 概念
+- **泛型** = 給容器貼「裝什麼型別」的標籤。好處:①**型別安全**——放錯型別在**編譯期**就擋,不必等執行期爆 `ClassCastException`;②取值**免強制轉型**。Java 5 前集合裝 `Object`,錯誤要 runtime 才炸;泛型把它提前到 compile time(貼標籤 = 早發現 = 便宜)。
+- **Map** = 鍵值對(key-value)集合,用 **key** 查 value(對比 List 用 **index** 查)。兩個型別參數 `Map<K,V>` 是因為有 key、value 兩種角色(List 只一種故一個參數)。`Map<String,String>` = 字串查字串;Jackson 把每組 key-value 轉成 JSON 的每個欄位,故 `Map.of("status","UP")` → `{"status":"UP"}`。
+- **import 消歧**:`Map` 選 `java.util.Map`(標準庫集合),不是 `org.hibernate.mapping.Map`(Hibernate 內部映射類)。同名型別看**套件**分辨。
+
 ---
 
 ## 踩過的坑(troubleshooting — README 素材 / 面試證據)
@@ -124,14 +145,19 @@ workspace 是書櫃、project 是書;書不能當書櫃。workspace 要指一個
 7. **`.metadata` 被 commit 進 repo** — GitHub 上冒出 `.metadata` 資料夾。原因:第 5 條那次 workspace=專案,Eclipse 在專案內建了 `.metadata`,`git add .` 掃進去;`.gitignore` 沒涵蓋。解法:`git rm -r --cached .metadata` + `.gitignore` 加 `.metadata/`。學到:早期的錯會留後遺症;`git add .` 前先 `git status` 看清掃了什麼。
 8. **AGENTS.md.md 雙副檔名** — 根目錄檔名多一截 `.md`。原因:打了 `.md` 又被自動加 `.md`。解法:`git mv AGENTS.md.md AGENTS.md`。學到:重複副檔名會讓「AI 找 AGENTS.md」慣例失效。
 9. **CRLF/LF 推送警告** — `LF will be replaced by CRLF` 一整片。原因:Windows Git `core.autocrlf=true` 轉換換行。解法(可選):`.gitattributes` 加 `* text=auto eol=lf`。學到:無害;repo-level 設定才可攜,per-machine 會漂移。
+10. **`@GetMapping` 底下沒方法** — 標記後面直接 `}`,編譯報「預期宣告卻遇到 `}`」(`<identifier> expected`)。原因:annotation 是修飾語,一定要修飾對象;`@GetMapping` 修飾的是「它下面那支方法」,但方法還沒寫,標籤貼在空氣上。解法:補上方法。學到:annotation 不能懸空,它一定綁著下面某個宣告(class / 方法 / 欄位)。
+11. **`Map` import 兩個同名候選** — Eclipse 快速修正列出 `java.util.Map` 與 `org.hibernate.mapping.Map`。原因:不同套件有同名型別。解法:選 `java.util.Map`(標準庫集合);`org.hibernate.mapping.Map` 是 Hibernate 內部映射類,不相干。學到:同名型別看**套件**分辨,`java.util.*` 幾乎總是你要的(`java.util.Date` vs `java.sql.Date` 同理)。
 
 ---
 
-## 下一步
+## 下一步(接續:Step 1 出口)
 
-1. 把 `AGENTS.md.md` 改回 `AGENTS.md`(重複副檔名會讓「AI 進 repo 找 AGENTS.md」的慣例失效)。
-2. (可選)加 `.gitattributes` 正規化換行(`* text=auto eol=lf`),消掉 CRLF 警告。
-3. **手寫 `GET /api/health`**(產品碼自己寫;契約:一個 Controller 一個方法,回 200,不引 actuator)。
-4. 驗證:`/api/health` → 200;**反向測試**停掉 PG 再啟動 → 應啟動失敗(證明真的連著 DB)→ 開回。
-5. 全綠 → commit `step1: 骨架 + health(本機 pg)` ← **這才是 Step 1 真正的出口 commit**。
-6. **Step 1 出口思考題**(答得出才算過):schema 為何用 Flyway 管、JPA 只設 validate?`ddl-auto=update` 上正式環境會怎樣?→ 答案已在觀念 2、3。
+> 前置全完成(骨架/環境/版控/AGENTS.md/health code)。剩下就是**驗證 → 思考題 → commit**。
+
+1. **跑驗證(你自己跑,人肉紅綠燈)**:
+   - 起動 `./mvnw spring-boot:run`(或 Eclipse Run As)→ log 無 ERROR、見 `Started EatrushApplication`。
+   - 正向:`GET /api/health` → 200 + `{"status":"UP"}`(用 `python -X utf8` 打);Swagger UI 現在該長出 `/api/health`(先前 No operations)。
+   - **反向(不可跳)**:停本機 PostgreSQL → 重啟 app → 應**啟動失敗**(datasource + `validate` 連不上)→ 讀最深 `Caused by`(自救梯第一級)→ 開回 PG 再確認正常。
+2. 答**出口思考題**(答得出才算過):schema 為何用 Flyway 管、JPA 只設 `validate`?`ddl-auto=update` 上正式環境會怎樣?→ 答案在觀念 2、3。
+3. 全綠 + 答得出 → `git commit`:`step1: 骨架 + health(本機 pg)`。
+4. AI 回寫本 dev-log「驗證通過」段(含反向那個 `Caused by` 長相)給你 review → Step 1 收工,進 **Step 2(建表 + seed)**。
