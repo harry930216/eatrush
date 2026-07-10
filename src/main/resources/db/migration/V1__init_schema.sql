@@ -94,19 +94,22 @@ CREATE TABLE ORDER_ITEM(
 訂單 = 單頭+單身
 */
 
-CREATE TABLE PERMISSION(
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    code VARCHAR NOT NULL UNIQUE,
-    name VARCHAR NOT NULL
-);
 
-CREATE TABLE ROLE_PERMISSION(
-    role VARCHAR,
-    permission_id BIGINT NOT NULL REFERENCES PERMISSION(id),
-    PRIMARY KEY (role, permission_id)
-    /*
-    複合 PK 免費附贈「同角色同權限不重複授權」;
-    PK 成員 PG 自動隱含 NOT NULL,故 role 不必明寫
-    */
-);
+--改掉 改成放在java組態檔(老師建議)
+
+-- CREATE TABLE PERMISSION(
+--     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+--     code VARCHAR NOT NULL UNIQUE,
+--     name VARCHAR NOT NULL
+-- );
+
+-- CREATE TABLE ROLE_PERMISSION(
+--     role VARCHAR,
+--     permission_id BIGINT NOT NULL REFERENCES PERMISSION(id),
+--     PRIMARY KEY (role, permission_id)
+--     /*
+--     複合 PK 免費附贈「同角色同權限不重複授權」;
+--     PK 成員 PG 自動隱含 NOT NULL,故 role 不必明寫
+--     */
+-- );
 
