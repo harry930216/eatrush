@@ -85,8 +85,8 @@ eatrush/
 
 | 產物 | 內容 |
 |---|---|
-| `V1__init_schema.sql` | 七張表,逐欄對照 spec §4 與 ER 圖。三個唯一鍵不可漏:member.email、meal_order.idempotency_key、permission.code;rejected_items 用 JSONB 可空;role_permission 複合主鍵(role, permission_id) |
-| `V2__seed.sql` | 照 spec §4 seed:2 方案、5 菜(和牛 stock=5 / required_level=2)、3 權限+矩陣(OWNER 全有、STAFF 只 ORDER_STATUS_MANAGE)、4 帳號(password_hash 先塞佔位字串,Step 7 開 V3 補真值) |
+| `V1__init_schema.sql` | 五張表(2026-07-08 第三戰改判:permission/role_permission 撤,矩陣進 Role enum — spec §4.4),逐欄對照 spec §4 與 ER 圖。兩個唯一鍵不可漏:member.email、meal_order.idempotency_key;rejected_items 用 JSONB 可空 |
+| `V2__seed.sql` | 照 spec §4 seed:2 方案、5 菜(和牛 stock=5 / required_level=2)、4 帳號(password_hash 先塞佔位字串,Step 7 開 V3 補真值)— seed 只剩「活資料」,權限矩陣不 seed(它住 code) |
 
 這步**不寫任何 entity(實體)** — entity 跟著用到它的步驟走(Step 3 起);validate 模式下「有表沒 entity」不炸、「有 entity 但對不齊」才炸,它會替你抓 DDL 漂移。
 
@@ -101,15 +101,14 @@ src/main/resources/db/migration/
 ### 手動驗證
 
 - [ ] `DROP DATABASE eatrush; CREATE DATABASE eatrush;` 後啟動 app → 日誌見 Flyway 套 V1、V2(從零重建=可重現性證明)
-- [ ] psql `\dt`(或 pgAdmin)→ 7 張表 + flyway_schema_history
+- [ ] psql `\dt`(或 pgAdmin)→ 5 張表 + flyway_schema_history
 - [ ] `SELECT name, stock, required_level FROM menu_item` → 5 道菜、和牛 5 份/等級 2
-- [ ] role_permission JOIN permission → OWNER 3 筆、STAFF 1 筆
 - [ ] **反向**:改 V1 檔任一字元重啟 → checksum 炸(migration 不可變的保護)→ 改回
 
 ### 出口
 
-- 思考題(spec §12-2):七張表每張「為何存在」不看文件講一遍;rejected 用 JSON、accepted 用表的理由。
-- [ ] commit:`step2: 七表 schema + seed`
+- 思考題(spec §12-2):五張表每張「為何存在」不看文件講一遍;rejected 用 JSON、accepted 用表的理由;permission/role_permission 為什麼撤(seed-only 氣味測試,spec §4.4)。
+- [ ] commit:`step2: 五表 schema + seed`
 
 ---
 
@@ -374,7 +373,7 @@ docs/incidents/  負庫存截圖、deadlock 截圖
 | JwtService | 發與驗 | 發(會員 id, role, 權限清單)→token 字串(**V1 時效 8 小時**,取捨見 spec §7.4);驗(token)→會員 id+authorities(無效拋例外) |
 | JwtAuthFilter(繼承 OncePerRequestFilter) | 讀 Authorization header → 驗 → 塞 SecurityContext;沒帶就放行(讓後面的規則去擋) | 覆寫 doFilterInternal |
 | Member(entity)+ MemberRepository | §4.2 映射 | 依 email 找(email)→Optional |
-| AuthService | 註冊(BCrypt、只能 CUSTOMER、planId 預設 399)/ 登入(驗密→JOIN 查矩陣裝 authorities→發 token) | 註冊(註冊請求)→void;登入(email, 密碼)→{token, role} |
+| AuthService | 註冊(BCrypt、只能 CUSTOMER、planId 預設 399)/ 登入(驗密→取 Role enum 自帶權限集合裝 authorities(spec §4.4,不查 DB)→發 token) | 註冊(註冊請求)→void;登入(email, 密碼)→{token, role} |
 | AuthController | /api/auth/register、/login | 兩支 |
 | CurrentMemberResolver(擇一:@AuthenticationPrincipal 或工具類) | 業務層拿「現在是誰」 | 目前會員()→會員 |
 | `V3__real_passwords.sql` | seed 佔位密碼換真 BCrypt 值(值用程式印一次貼進來) | — |
