@@ -127,6 +127,7 @@ git diff --stat                 # 只顯示變更統計(增減行數)
 
 ### `git log`
 查看提交歷史。
+按Q退出
 
 ```bash
 git log                          # 完整歷史
