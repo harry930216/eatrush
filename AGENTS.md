@@ -13,6 +13,7 @@ EatRush(呷飽沒):吃到飽點餐+庫存系統,Harry 的個人**學習型** sid
 | `docs/2026-07-07-eatrush-design.md` | 決策手冊(WHY):所有設計決策與理由,**唯一真相源** |
 | `docs/eatrush-mvp-playbook.md` | 施工手冊(HOW+VERIFY):十步、每步契約/驗證/預習/學習意義;含大閉環章(功能圈 v1.1 限購→v1.2 BOM→v1.3 KDS) |
 | `docs/eatrush-review-todo.md` | spec 審閱隊列 |
+| `docs/eatrush-docs-debt-todo.md` | 文件債修補隊列(三洞:README 門面/現況基準/幽靈引用)。**Harry 自修,AI 只給清單與修後 review,不代寫** |
 | `docs/troubleshooting/` | 排錯筆記(問題現象→真正原因→解法→學到什麼) |
 | `docs/iterations/` | 大閉環紀錄:v1.1 起每圈一份 mini-spec(選題/設計/拆步/retro 同檔封存) |
 | `docs/eatrush-readme-template.md` | README 骨架:施工中逐步填【】,Step 8/10 定稿(API 文件=Swagger,不手寫) |
